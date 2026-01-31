@@ -30,19 +30,21 @@ jobs:
     - name: Get App Version Name
       id: get_version
       run: |
-        # Run gradle properties, grep for versionName, and clean up the output
-        VERSION_NAME=$(./gradlew -q app:properties | grep "versionName:" | awk '{print $2}')
+        VERSION_NAME=$(grep 'versionName' gradle/libs.versions.toml | awk -F'"' '{print $2}')
+        
+        if [ -z "$VERSION_NAME" ]; then
+          echo "::error::Could not extract version name from gradle/libs.versions.toml"
+          exit 1
+        fi
+        
         echo "Detected Version: $VERSION_NAME"
         echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
-
 
     - name: Run Tests
       run: ./gradlew testDebugUnitTest
 
-
     - name: Build Debug APK
       run: ./gradlew assembleDebug
-
 
     - name: Decode Keystore
       env:
@@ -58,7 +60,6 @@ jobs:
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       run: ./gradlew assembleRelease
 
-
     - name: Upload APK Artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -66,7 +67,6 @@ jobs:
         path: |
           app/build/outputs/apk/debug/*.apk
           app/build/outputs/apk/release/*.apk
-
 
     - name: Create GitHub Release
       if: github.event_name == 'push'
