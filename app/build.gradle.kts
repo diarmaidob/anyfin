@@ -1,6 +1,3 @@
-import java.io.FileInputStream
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
@@ -9,12 +6,6 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.sqldelight)
     alias(libs.plugins.kotlin.serialization)
-}
-
-val keystoreProperties = Properties()
-val keystoreFile = rootProject.file("keystore.properties")
-if (keystoreFile.exists()) {
-    keystoreProperties.load(FileInputStream(keystoreFile))
 }
 
 android {
@@ -36,10 +27,13 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("../anyfin-release.keystore")
-            storePassword = keystoreProperties["KEYSTORE_PASSWORD"] as String?
-            keyAlias = keystoreProperties["KEY_ALIAS"] as String?
-            keyPassword = keystoreProperties["KEY_PASSWORD"] as String?
+            val envStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+            if (envStoreFile != null) {
+                storeFile = file(envStoreFile)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
         }
     }
 
@@ -47,7 +41,13 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
+
+            val envStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+            signingConfig = if (envStoreFile != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 
@@ -60,7 +60,6 @@ android {
         compose = true
         buildConfig = true
     }
-
 }
 
 kotlin {
@@ -68,7 +67,6 @@ kotlin {
 }
 
 dependencies {
-    // Core & UI
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
@@ -84,23 +82,19 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.material.icons.extended.android)
 
-    // Video player
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.media3.exoplayer.hls)
 
-
     implementation(libs.androidx.datastore)
     implementation(libs.tink.android)
 
-    // Architecture & DI
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
     implementation(libs.androidx.navigation.compose)
 
-    // Networking
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.moshi)
     implementation(libs.okhttp)
@@ -112,11 +106,9 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 
-    // Database
     implementation(libs.sqldelight.android)
     implementation(libs.sqldelight.coroutines)
 
-    // Debug
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
@@ -125,7 +117,6 @@ dependencies {
     testImplementation(libs.sqldelight.sqlite)
 }
 
-// SQLDelight Configuration
 sqldelight {
     databases {
         create("AnyfinDatabase") {

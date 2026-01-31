@@ -26,10 +26,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
 
-@RunWith(JUnit4::class)
 @OptIn(ExperimentalCoroutinesApi::class)
 class GetPlaybackInfoUseCaseTest {
 
@@ -44,8 +41,11 @@ class GetPlaybackInfoUseCaseTest {
     @Before
     fun setup() {
         MockKAnnotations.init(this)
-        useCase = GetPlaybackInfoUseCase(repo, sessionRepo)
+
+        coEvery { repo.refreshItem(any()) } returns DataResult.Success(Unit)
         mockkObject(MediaSupportChecker)
+
+        useCase = GetPlaybackInfoUseCase(repo, sessionRepo)
     }
 
     @After
