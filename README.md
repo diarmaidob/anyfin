@@ -1,10 +1,33 @@
 # Anyfin
 
-A media player Android application built with modern development practices.
+A Jellyfin client built with modern development practices.
+
+<p align="center">
+<table align="center" width="100%">
+  <tr>
+    <td width="20%" align="center">
+      <img src="https://github.com/user-attachments/assets/02e51ee2-5071-4aab-9283-5619d0daf80d" width="100%" />
+    </td>
+    <td width="20%" align="center">
+      <img src="https://github.com/user-attachments/assets/7e2da941-fdce-405a-9ad3-0188c6589caa" width="100%" />
+    </td>
+    <td width="20%" align="center">
+      <img src="https://github.com/user-attachments/assets/4f91778c-22e3-4b17-a315-2b74419cc742" width="100%" />
+    </td>
+    <td width="20%" align="center">
+      <img src="https://github.com/user-attachments/assets/4c86eb30-0891-46ca-90d8-fb4be7ca1437" width="100%" />
+    </td>
+    <td width="20%" align="center">
+      <img src="https://github.com/user-attachments/assets/3665212b-181b-444e-b666-24c9103f233c" width="100%" />
+    </td>
+  </tr>
+</table>
+</p>
 
 ## Overview
 
-Anyfin is an Android app for media playback and management. This is currently version 0.1 and represents the initial implementation.
+Anyfin is a Jellyfin client which hopes to play anything on anything. This is currently version 0.1 and represents the initial implementation.
+It's currently only Android but the next stage is to port to Kotlin Multiplatform and add desktop and iOS apps.
 
 ## Features
 
@@ -30,7 +53,9 @@ Version 0.1 - Early development stage with core functionality implemented.
 ## Future Roadmap
 
 - Migrate to Kotlin Multiplatform (KMP) to support additional platforms
-- Enhanced media management features
+- Introduce proper cache based queries
+- Search/discover & request
+- Server management etc
 - UI/UX improvements
 
 ## Development
