@@ -1,0 +1,223 @@
+import kotlin.Boolean;
+
+-- ============================================================================
+-- 1. MediaInfo: The Core Identity & Hierarchy
+-- We store IndexNumber/ParentIndex here to allow efficient sorting in SQL.
+-- ============================================================================
+CREATE TABLE MediaItemInfo (
+    id TEXT PRIMARY KEY NOT NULL,
+    serverId TEXT NOT NULL,
+    type TEXT NOT NULL,           -- "Movie", "Series", "Episode", "Season"
+
+    -- Display Data
+    name TEXT NOT NULL,           -- We enforce NOT NULL here, fix in Converter
+    sortName TEXT NOT NULL,       -- We enforce NOT NULL here, fix in Converter
+    originalTitle TEXT,           -- Nullable
+
+    -- Hierarchy / Navigation (CRITICAL for Episodes/Seasons)
+    path TEXT,                    -- Nullable
+    parentId TEXT,                -- Nullable (The Season ID or Folder ID)
+    seriesId TEXT,                -- Nullable (The Show ID)
+    seriesName TEXT,              -- Nullable (Denormalized for easy UI display)
+    seasonId TEXT,                -- Nullable
+    seasonName TEXT,              -- Nullable
+
+    -- Ordering (CRITICAL for correct sorting)
+    indexNumber INTEGER,          -- Episode Number / Season Number / Disc Number
+    parentIndexNumber INTEGER,    -- Season Number (for Episodes)
+
+    -- Metadata
+    productionYear INTEGER,       -- Nullable
+    premiereDate INTEGER,         -- Nullable (Epoch millis)
+    endDate INTEGER               -- Nullable (Epoch millis, useful for Series)
+);
+
+-- ============================================================================
+-- 2. MediaDetail: The "Heavy" Text & Ratings
+-- ============================================================================
+CREATE TABLE MediaItemDetail (
+    mediaId TEXT PRIMARY KEY NOT NULL,
+    overview TEXT,                -- Nullable (API often omits this)
+    tagline TEXT,                 -- Nullable
+    officialRating TEXT,          -- "TV-MA", "PG"
+    communityRating REAL,         -- 7.4
+    criticRating INTEGER,         -- 85
+    dateCreated INTEGER NOT NULL DEFAULT 0,
+    runTimeTicks INTEGER NOT NULL DEFAULT 0,
+    container TEXT,               -- "mkv", "mp4"
+    FOREIGN KEY(mediaId) REFERENCES MediaItemInfo(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- 3. UserData: Sync State
+-- ============================================================================
+CREATE TABLE MediaItemUserData (
+    mediaId TEXT PRIMARY KEY NOT NULL,
+    isPlayed INTEGER AS Boolean NOT NULL DEFAULT 0,
+    playbackPositionTicks INTEGER NOT NULL DEFAULT 0,
+    isFavorite INTEGER AS Boolean NOT NULL DEFAULT 0,
+    lastPlayedDate INTEGER NOT NULL DEFAULT 0,
+    playCount INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(mediaId) REFERENCES MediaItemInfo(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- 4. MediaImageTagInfo: Image Cache Keys
+-- ============================================================================
+CREATE TABLE MediaItemImageTagInfo (
+    mediaId TEXT PRIMARY KEY NOT NULL,
+    "primary" TEXT,           -- The item's own poster
+    backdrop TEXT,            -- The item's own backdrop
+    logo TEXT,                -- The item's own logo (Movies only usually)
+    thumb TEXT,               -- The item's own thumb
+    banner TEXT,
+    seriesPrimary TEXT,       -- <--- NEW: The Show Poster
+    parentLogo TEXT,          -- <--- NEW: The Show Logo
+    parentThumb TEXT,         -- <--- NEW: The Show/Season Thumb
+    parentBackdrop TEXT,
+    FOREIGN KEY(mediaId) REFERENCES MediaItemInfo(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- 5. MediaListEntry: The Link Table for "Views" (Next Up, Latest, Library)
+-- ============================================================================
+CREATE TABLE MediaListEntry (
+    listKey TEXT NOT NULL,       -- "next_up", "latest_movies", "collection_123"
+    mediaId TEXT NOT NULL,
+    sortOrder INTEGER NOT NULL,
+    PRIMARY KEY(listKey, mediaId),
+    FOREIGN KEY(mediaId) REFERENCES MediaItemInfo(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- 6. MediaItemSource: Represents the file/container (MKV, MP4)
+-- ============================================================================
+CREATE TABLE MediaItemSource (
+    id TEXT PRIMARY KEY NOT NULL, -- Usually same as Item ID, but distinct for multi-version
+    mediaId TEXT NOT NULL,        -- FK to MediaItemInfo
+    container TEXT,
+    protocol TEXT,                -- "File", "Http"
+    name TEXT,
+    supportsDirectPlay INTEGER AS Boolean NOT NULL DEFAULT 0,
+    supportsTranscoding INTEGER AS Boolean NOT NULL DEFAULT 0,
+    FOREIGN KEY(mediaId) REFERENCES MediaItemInfo(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- 7. MediaItemStream: The specific tracks (Audio, Subtitles, Video)
+-- ============================================================================
+CREATE TABLE MediaItemStream (
+    sourceId TEXT NOT NULL,         -- FK to MediaItemSource
+    indexNumber INTEGER NOT NULL,   -- The Stream Index (used for API selection)
+    type TEXT NOT NULL,             -- "Audio", "Subtitle", "Video"
+    codec TEXT,
+    language TEXT,                  -- "eng", "jpa"
+    displayTitle TEXT,              -- "English (AAC)"
+    isDefault INTEGER AS Boolean DEFAULT 0,
+    isForced INTEGER AS Boolean DEFAULT 0,
+    channels INTEGER,               -- Audio Only
+    width INTEGER,                  -- Video Only
+    height INTEGER,                 -- Video Only
+    PRIMARY KEY(sourceId, indexNumber),
+    FOREIGN KEY(sourceId) REFERENCES MediaItemSource(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- WRITES (Upserts)
+-- ============================================================================
+
+upsertInfo:
+INSERT INTO MediaItemInfo(
+    id, serverId, type, name, sortName, originalTitle,
+    path, parentId, seriesId, seriesName, seasonId, seasonName,
+    indexNumber, parentIndexNumber, productionYear, premiereDate, endDate
+)
+VALUES ?
+ON CONFLICT(id) DO UPDATE SET
+    serverId          = excluded.serverId,
+    type              = excluded.type,
+    name              = excluded.name,
+    sortName          = excluded.sortName,
+    originalTitle     = excluded.originalTitle,
+    path              = excluded.path,
+    parentId          = excluded.parentId,
+    seriesId          = excluded.seriesId,
+    seriesName        = excluded.seriesName,
+    seasonId          = excluded.seasonId,
+    seasonName        = excluded.seasonName,
+    indexNumber       = excluded.indexNumber,
+    parentIndexNumber = excluded.parentIndexNumber,
+    productionYear    = excluded.productionYear,
+    premiereDate      = excluded.premiereDate,
+    endDate           = excluded.endDate;
+
+upsertDetail:
+INSERT OR REPLACE INTO MediaItemDetail VALUES ?;
+
+upsertUserData:
+INSERT OR REPLACE INTO MediaItemUserData VALUES ?;
+
+upsertImageTags:
+INSERT OR REPLACE INTO MediaItemImageTagInfo VALUES ?;
+
+insertListEntry:
+INSERT OR REPLACE INTO MediaListEntry VALUES ?;
+
+deleteStaleEntries:
+DELETE FROM MediaListEntry WHERE listKey = :listKey AND mediaId NOT IN :currentIds;
+
+-- Source/Stream Writes
+deleteSourcesForMedia:
+DELETE FROM MediaItemSource WHERE mediaId = ?;
+
+deleteStreamsForSource:
+DELETE FROM MediaItemStream WHERE sourceId = ?;
+
+upsertSource:
+INSERT OR REPLACE INTO MediaItemSource VALUES ?;
+
+upsertStream:
+INSERT OR REPLACE INTO MediaItemStream VALUES ?;
+
+-- ============================================================================
+-- READS
+-- ============================================================================
+
+-- A full join view for easy mapping
+CREATE VIEW MediaItemRow AS
+SELECT
+    MediaItemInfo.*,
+    MediaItemDetail.*,
+    MediaItemUserData.*,
+    MediaItemImageTagInfo.*
+FROM MediaItemInfo
+LEFT JOIN MediaItemDetail ON MediaItemInfo.id = MediaItemDetail.mediaId
+LEFT JOIN MediaItemUserData ON MediaItemInfo.id = MediaItemUserData.mediaId
+LEFT JOIN MediaItemImageTagInfo ON MediaItemInfo.id = MediaItemImageTagInfo.mediaId;
+
+-- Select generic list
+getListItems:
+SELECT r.*
+FROM MediaListEntry l
+JOIN MediaItemRow r ON l.mediaId = r.id
+WHERE l.listKey = ?
+ORDER BY l.sortOrder ASC;
+
+-- Select specific item
+getItem:
+SELECT * FROM MediaItemRow WHERE id = ?;
+
+getSourceById:
+SELECT * FROM MediaItemSource WHERE id = ?;
+
+getSourcesForMedia:
+SELECT * FROM MediaItemSource WHERE mediaId = ?;
+
+getStreamsForSource:
+SELECT * FROM MediaItemStream WHERE sourceId = ? ORDER BY indexNumber;
+
+getSpecificStream:
+SELECT * FROM MediaItemStream WHERE sourceId = ? AND indexNumber = ?;
+
+clearAll:
+DELETE FROM MediaItemInfo;
